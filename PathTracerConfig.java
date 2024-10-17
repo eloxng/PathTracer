@@ -12,19 +12,24 @@ public interface PathTracerConfig extends Config {
     @ConfigItem(
             keyName = "setPathColor",
             name = "Set path color",
-            description = "Set the color of the tiles that make the path",
+            description = "Set the color of the tiles that makes the path",
             position = 1
     )
     default Color setPathColor() {return Color.blue;}
 
     @ConfigItem(
-            keyName = "borderWidth",
-            name = "Border Width",
-            description = "Width of the marked tile border",
+            keyName = "setCurrColor",
+            name = "Current Location",
+            description = "Color of the current location of the runescaper",
             position = 2
     )
-    default double borderWidth()
-    {
-        return 2;
-    }
+    default Color setCurrColor() {return Color.blue;}
+
+    @ConfigItem(
+            keyName = "setDestColor",
+            name = "Destination",
+            description = "Color of the selected destination of the runescaper",
+            position = 3
+    )
+    default Color setDestColor() {return Color.blue;}
 }

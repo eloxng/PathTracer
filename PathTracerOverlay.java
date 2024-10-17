@@ -43,8 +43,8 @@ public class PathTracerOverlay extends Overlay {
             Polygon tilePoly2 = Perspective.getCanvasTilePoly(client, localPoint2);
             if(tilePoly1 != null && tilePoly2 != null){
                 // Color the tile polygons
-                OverlayUtil.renderPolygon(graphics, tilePoly1, config.setPathColor());
-                OverlayUtil.renderPolygon(graphics, tilePoly2, Color.PINK);
+                OverlayUtil.renderPolygon(graphics, tilePoly1, config.setCurrColor());
+                OverlayUtil.renderPolygon(graphics, tilePoly2, config.setDestColor());
             }
         }
         return null;
