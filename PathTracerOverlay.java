@@ -15,6 +15,10 @@ public class PathTracerOverlay extends Overlay {
     private final PathTracerPlugin plugin;
     private final PathTracerConfig config;
 
+    private WorldView worldView;
+    private WorldPoint start;
+    private WorldPoint end;
+
     @Inject
     private PathTracerOverlay(Client client, PathTracerPlugin plugin, PathTracerConfig config)
     {
@@ -27,16 +31,12 @@ public class PathTracerOverlay extends Overlay {
 
     @Override
     public Dimension render(Graphics2D graphics){
-        // Get the client WorldView, the user's current tile and destination tile (WorldPoint)
-        WorldView worldView = plugin.getWorldView();
-        WorldPoint start = plugin.getWPCurrentTile();
-        WorldPoint end = plugin.getWPDestinationTile();
         // Ensure valid start and end points
-        if (start == null || end == null)
+        if (getStart() == null || getEnd() == null)
             return null; // Return if points are invalid
         // Get local points from WorldPoints
-        LocalPoint localPoint1 = LocalPoint.fromWorld(worldView, start);
-        LocalPoint localPoint2 = LocalPoint.fromWorld(worldView, end);
+        LocalPoint localPoint1 = LocalPoint.fromWorld(getWV(), getStart());
+        LocalPoint localPoint2 = LocalPoint.fromWorld(getWV(), getEnd());
         if(localPoint1 != null && localPoint2 != null){
             // Get the tile polygon from the local points
             Polygon tilePoly1 = Perspective.getCanvasTilePoly(client, localPoint1);
@@ -49,4 +49,15 @@ public class PathTracerOverlay extends Overlay {
         }
         return null;
     }
+
+    // Gets the parameters from PathTracerPlugin and set's them in here for render() to use
+    public void drawTiles(WorldView worldView, WorldPoint start, WorldPoint end){
+        this.worldView = worldView;
+        this.start = start;
+        this.end = end;
+    }
+    // Get's for render() to use
+    private WorldView getWV() { return worldView; }
+    private WorldPoint getStart() { return start; }
+    private WorldPoint getEnd() { return end; }
 }
