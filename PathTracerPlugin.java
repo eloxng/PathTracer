@@ -207,12 +207,19 @@ public class PathTracerPlugin extends Plugin {
             // Get neighboring scene x and y coordinates
             int nSceneX = sceneX + offsets[i][0];
             int nSceneY = sceneY + offsets[i][1];
-            // Make a new local point for the neighboring point
-            LocalPoint neighborPoint = LocalPoint.fromScene(nSceneX, nSceneY, getWorldView());
-            // ORDER: SW W NW S N SE E NE  0-7
 
-            // Add the neighboring point to neighbors list if that point is walkable AND no wall blocks the current and neighbor
-            if(isTileWalkable(neighborPoint) && noWallBlocking(neighborPoint, directions[i]))
+            // Skip if this neighbor is out of bounds or invalid
+            LocalPoint neighborPoint = LocalPoint.fromScene(nSceneX, nSceneY, getWorldView());
+            if (!neighborPoint.isInScene())
+                continue;
+
+            // ORDER: SW W NW S N SE E NE
+            // If the current tile can't move in a neighbor's direction (no walls/obstacles to->from), skip adding this neighbor
+            boolean canMoveInDirection = noWallBlocking(current.getLocalPoint(), neighborPoint, directions[i]);
+            if(!canMoveInDirection)
+                continue;
+
+            if(isTileWalkable(neighborPoint))
                 neighbors.add(new TileNode(neighborPoint));
         }
         return neighbors;
@@ -243,52 +250,67 @@ public class PathTracerPlugin extends Plugin {
         // Return based on if colFlag of tile based on if you can move your character to that tile or not
         int[][] colData = collisionData[0].getFlags();
         colFlag = colData[sceneX][sceneY];
-        return ((colFlag & CollisionDataFlag.BLOCK_MOVEMENT_FULL) == 0 &&
-                (colFlag & CollisionDataFlag.BLOCK_LINE_OF_SIGHT_FULL) == 0);
+        return (colFlag & CollisionDataFlag.BLOCK_MOVEMENT_FULL) == 0;
     }
 
     // Determines whether a wall is blocking movement in a given direction
-    private boolean noWallBlocking(LocalPoint neighborPoint, String direction) {
+    private boolean noWallBlocking(LocalPoint currentPoint, LocalPoint neighborPoint, String direction) {
+        int currentX = currentPoint.getSceneX();
+        int currentY = currentPoint.getSceneY();
         int neighborX = neighborPoint.getSceneX();
         int neighborY = neighborPoint.getSceneY();
 
-        // Initialize collision data
         CollisionData[] collisionData = getWorldView().getCollisionMaps();
         if (collisionData == null || collisionData.length == 0 || collisionData[0] == null)
             return false; // Assume there's a wall if no collision data
 
         int[][] colData = collisionData[0].getFlags();
 
-        // Check wall blocking based on direction
         switch (direction) {
-            case "N": // Moving North
-                return (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_LINE_OF_SIGHT_SOUTH) == 0;
-            case "S": // Moving South
-                return (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_LINE_OF_SIGHT_NORTH) == 0;
-            case "E": // Moving East
-                return (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_LINE_OF_SIGHT_WEST) == 0;
-            case "W": // Moving West
-                return (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_LINE_OF_SIGHT_EAST) == 0;
-            case "NE": // Moving Northeast (combination of N and E)
-                return (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
+            case "N":
+                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0;
+            case "S":
+                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0;
+            case "E":
+                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
                         (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0;
-            case "NW": // Moving Northwest (combination of N and W)
-                return (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
+            case "W":
+                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
                         (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0;
-            case "SE": // Moving Southeast (combination of S and E)
-                return (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0;
-            case "SW": // Moving Southwest (combination of S and W)
-                return (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0;
+            case "NE":
+                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH_EAST) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH_WEST) == 0;
+            case "NW":
+                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH_WEST) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH_EAST) == 0;
+            case "SE":
+                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH_EAST) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH_WEST) == 0;
+            case "SW":
+                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH_WEST) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
+                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
+                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH_EAST) == 0;
             default:
-                // If an unrecognized direction is passed, assume there's a wall
                 return false;
         }
+
     }
 }
 
