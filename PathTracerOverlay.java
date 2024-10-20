@@ -1,20 +1,21 @@
 package net.runelite.client.plugins.pathtracer;
 
-import net.runelite.api.*;
-import net.runelite.api.coords.LocalPoint;
-import net.runelite.api.coords.WorldPoint;
-import net.runelite.client.ui.overlay.*;
-import net.runelite.api.CollisionData;
+import net.runelite.api.Client;
+import net.runelite.api.Perspective;
+import net.runelite.client.ui.overlay.Overlay;
+import net.runelite.client.ui.overlay.OverlayUtil;
+import net.runelite.client.ui.overlay.OverlayPosition;
 
 import javax.inject.Inject;
 import java.awt.*;
-import java.util.List;
+
 
 public class PathTracerOverlay extends Overlay {
     private final Client client;
     private final PathTracerPlugin plugin;
     private final PathTracerConfig config;
-    private List<TileNode> path;
+    private TileNode path;
+
 
     @Inject
     private PathTracerOverlay(Client client, PathTracerPlugin plugin, PathTracerConfig config)
@@ -28,23 +29,18 @@ public class PathTracerOverlay extends Overlay {
 
     @Override
     public Dimension render(Graphics2D graphics){
-        if(path == null || path.isEmpty())
-            return null;
-
-        for(TileNode tile : path){
-            Polygon poly = Perspective.getCanvasTilePoly(client, tile.getLocalPoint());
-            if(poly != null){
-                OverlayUtil.renderPolygon(graphics, poly, config.setPathColor());
+        TileNode current = path;
+        while(current != null){
+            if(current.getLocalPoint() != null){
+                Polygon poly = Perspective.getCanvasTilePoly(client, current.getLocalPoint());
+                if(poly != null)
+                    OverlayUtil.renderPolygon(graphics, poly, config.setCurrColor());
             }
+            current = current.getParent();
         }
         return null;
     }
 
     // Add the path list from plugins
-    public void addTilesToDraw(List<TileNode> path){
-        if(path == null)
-            client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Path passed as null, clearing path...", "");
-        else
-            this.path = path;
-    }
+    public void addTilesToDraw(TileNode path){ this.path = path; }
 }
