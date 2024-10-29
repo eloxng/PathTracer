@@ -41,11 +41,8 @@ public class PathTracerPlugin extends Plugin {
             {0, -1},         {0, 1},
             {1, -1}, {1, 0}, {1, 1}
     };
-    private final String[] directions = {"SW", "W", "NW",
-                                        "S", "N",
-                                        "SE", "E", "NE"};
 
-
+    
     @Provides
     PathTracerConfig provideConfig(ConfigManager configManager) { return configManager.getConfig(PathTracerConfig.class); }
 
@@ -112,6 +109,7 @@ public class PathTracerPlugin extends Plugin {
     // Returns the current tile as a WorldPoint
     public WorldPoint getWPCurrentTile(){ return WorldPoint.fromLocalInstance(client, getLPCurrentTile()); }
 
+
     // Returns a WorldView
     public WorldView getWorldView(){ return client.getTopLevelWorldView(); }
 
@@ -131,11 +129,6 @@ public class PathTracerPlugin extends Plugin {
             client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Start and or goal point is null.", "");
             return;
         }
-        // If destination is unreachable to begin with
-        if(!isTileWalkable(goal)){
-            client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Destination unreachable", "");
-            return;
-        }
         client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Start and or goal point initialized.", "");
 
         // Initialize startTile and goalTile TileNode's
@@ -146,12 +139,10 @@ public class PathTracerPlugin extends Plugin {
         startTile.setFcost(startTile.getGcost() + startTile.getHcost());
         goalTile.setHcost(0);
 
-        clientThread.invoke(() -> {
-            TileNode path = AStarPath(startTile, goalTile);
-            if (path != null) {
-                pathTracerOverlay.addTilesToDraw(path);
-            }
-        });
+        // Draw path
+        TileNode path = AStarPath(startTile, goalTile);
+        if (path != null)
+            pathTracerOverlay.addTilesToDraw(path);
     }
 
     private TileNode AStarPath(TileNode start, TileNode goal){
@@ -173,8 +164,8 @@ public class PathTracerPlugin extends Plugin {
 
             // Check the neighboring tiles
             for(TileNode neighbor : getNeighbors(currentTile)){
-                if(closedList.contains(neighbor) || !isTileWalkable(neighbor.getLocalPoint()))
-                    continue; // Skip neighbor that is closed, not walkable, or blocked by a wall from current to neighbor
+                if(closedList.contains(neighbor))
+                    continue;
 
                 // Calculate tentative g cost
                 int tgcost = currentTile.getGcost() + calculateManhattanDistance(currentTile, neighbor);
@@ -192,6 +183,7 @@ public class PathTracerPlugin extends Plugin {
                         openList.add(neighbor);
                 }
             }
+
         }
         return null;
     }
@@ -203,23 +195,14 @@ public class PathTracerPlugin extends Plugin {
         int sceneY = current.getLocalPoint().getSceneY();
 
         // Offsets for the 8 possible neighbors
-        for(int i = 0; i < offsets.length; i++){
-            // Get neighboring scene x and y coordinates
-            int nSceneX = sceneX + offsets[i][0];
-            int nSceneY = sceneY + offsets[i][1];
+        for(int[] offset: offsets){
+            // Get neighboring scene x and y [coordinates
+            int nSceneX = sceneX + offset[0];
+            int nSceneY = sceneY + offset[1];
 
-            // Skip if this neighbor is out of bounds or invalid
+            // Skip if this neighbor is out of bounds or blocked by a wall
             LocalPoint neighborPoint = LocalPoint.fromScene(nSceneX, nSceneY, getWorldView());
-            if (!neighborPoint.isInScene())
-                continue;
-
-            // ORDER: SW W NW S N SE E NE
-            // If the current tile can't move in a neighbor's direction (no walls/obstacles to->from), skip adding this neighbor
-            boolean canMoveInDirection = noWallBlocking(current.getLocalPoint(), neighborPoint, directions[i]);
-            if(!canMoveInDirection)
-                continue;
-
-            if(isTileWalkable(neighborPoint))
+            if(canMoveTo(current.getLocalPoint(), neighborPoint))
                 neighbors.add(new TileNode(neighborPoint));
         }
         return neighbors;
@@ -229,88 +212,56 @@ public class PathTracerPlugin extends Plugin {
     // Determines distance from one TileNode to another TileNode
     // Used as the h cost for a TileNode
     private int calculateManhattanDistance(TileNode start, TileNode goal) {
+
+        /*
+            => API built in distance calculation: start.getLocalPoint().distanceTo(goal.getLocalPoint());
+            => Manhattan Distance: Math.abs(start.getLocalPoint().getSceneX() - goal.getLocalPoint().getSceneX()) +
+                Math.abs(start.getLocalPoint().getSceneY() - goal.getLocalPoint().getSceneY());
+        */
         return Math.abs(start.getLocalPoint().getSceneX() - goal.getLocalPoint().getSceneX()) +
                 Math.abs(start.getLocalPoint().getSceneY() - goal.getLocalPoint().getSceneY());
     }
 
-    // Determines if an in-game tile is walkable based off the collision map rendered from the user's WorldView
-    private boolean isTileWalkable(LocalPoint tile){
-        int colFlag; // Collision flag value
-        int sceneX = tile.getSceneX(); // X scene coordinates
-        int sceneY = tile.getSceneY(); // Y Scene coordinates
-
-        CollisionData[] collisionData = getWorldView().getCollisionMaps();
-        if(collisionData == null || collisionData.length == 0 || collisionData[0] == null)
-            return false;
-
-        // If not in scene, then not walkable
-        if (!tile.isInScene())
-            return false;
-
-        // Return based on if colFlag of tile based on if you can move your character to that tile or not
-        int[][] colData = collisionData[0].getFlags();
-        colFlag = colData[sceneX][sceneY];
-        return (colFlag & CollisionDataFlag.BLOCK_MOVEMENT_FULL) == 0;
-    }
-
-    // Determines whether a wall is blocking movement in a given direction
-    private boolean noWallBlocking(LocalPoint currentPoint, LocalPoint neighborPoint, String direction) {
+    private boolean canMoveTo(LocalPoint currentPoint, LocalPoint neighborPoint) {
         int currentX = currentPoint.getSceneX();
         int currentY = currentPoint.getSceneY();
         int neighborX = neighborPoint.getSceneX();
         int neighborY = neighborPoint.getSceneY();
 
         CollisionData[] collisionData = getWorldView().getCollisionMaps();
-        if (collisionData == null || collisionData.length == 0 || collisionData[0] == null)
+        if (collisionData == null || collisionData.length == 0 || collisionData[getWorldView().getPlane()] == null)
             return false; // Assume there's a wall if no collision data
 
-        int[][] colData = collisionData[0].getFlags();
+        // Get collision data
+        int[][] colData = collisionData[getWorldView().getPlane()].getFlags();
 
-        switch (direction) {
-            case "N":
-                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0;
-            case "S":
-                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0;
-            case "E":
-                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0;
-            case "W":
-                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0;
-            case "NE":
-                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH_EAST) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH_WEST) == 0;
-            case "NW":
-                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH_WEST) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH_EAST) == 0;
-            case "SE":
-                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH_EAST) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH_WEST) == 0;
-            case "SW":
-                return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH_WEST) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
-                        (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
-                        (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH_EAST) == 0;
-            default:
-                return false;
+        // First, check if the target tile itself is walkable
+        if ((colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_FULL) != 0)
+            return false;
+
+        // Determine movement direction based on the relative position of neighbor to current
+        int deltaX = neighborX - currentX;
+        int deltaY = neighborY - currentY;
+        if (deltaX == 0 && deltaY == 1) {
+            // Moving North
+            return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0 &&
+                    (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0;
+        } else if (deltaX == 0 && deltaY == -1) {
+            // Moving South
+            return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) == 0 &&
+                    (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) == 0;
+        } else if (deltaX == 1 && deltaY == 0) {
+            // Moving East
+            return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0 &&
+                    (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0;
+        } else if (deltaX == -1 && deltaY == 0) {
+            // Moving West
+            return (colData[currentX][currentY] & CollisionDataFlag.BLOCK_MOVEMENT_WEST) == 0 &&
+                    (colData[neighborX][neighborY] & CollisionDataFlag.BLOCK_MOVEMENT_EAST) == 0;
+        } else {
+            // Not a valid movement direction (e.g., diagonal not supported or points are the same)
+            return false;
         }
-
     }
 }
 
